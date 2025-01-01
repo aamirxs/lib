@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Student Details</h5>
+                        <div>
+                            <a href="{{ url_for('generate_student_report_route', student_id=student.id) }}" class="btn btn-info">
+                                <i class="fas fa-file-pdf"></i> Generate Report
+                            </a>
+                            <a href="{{ url_for('add_fee', student_id=student.id) }}" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Add Fee
+                            </a>
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6>Student Information</h6>
+                            <table class="table">
+                                <tr>
+                                    <th>Name:</th>
+                                    <td>{{ student.name }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Seat Number:</th>
+                                    <td>{{ student.seat_number }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Phone Number:</th>
+                                    <td>{{ student.phone_number }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Joining Date:</th>
+                                    <td>{{ student.joining_date.strftime('%Y-%m-%d') }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Monthly Fee:</th>
+                                    <td>₹{{ "%.2f"|format(student.monthly_fee) }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <h6>Fee Records</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Payment Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for fee in student.fees|sort(attribute='month', reverse=true) %}
+                                <tr>
+                                    <td>{{ fee.month.strftime('%B %Y') }}</td>
+                                    <td>₹{{ "%.2f"|format(fee.amount) }}</td>
+                                    <td>
+                                        {% if fee.status == 'paid' %}
+                                            <span class="badge bg-success">Paid</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Unpaid</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ fee.payment_date.strftime('%Y-%m-%d') if fee.status == 'paid' else '-' }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center">No fee records found</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

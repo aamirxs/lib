@@ -1,0 +1,222 @@
+:root {
+    --primary-color: #4361ee;
+    --secondary-color: #3f37c9;
+    --success-color: #4cc9f0;
+    --warning-color: #f72585;
+    --light-bg: #f8f9fa;
+    --dark-bg: #212529;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: #f5f6fa;
+}
+
+/* Sidebar Styles */
+.sidebar {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+.sidebar h3 {
+    color: white;
+    font-weight: 600;
+    padding: 20px;
+    margin: 0;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sidebar nav a {
+    color: rgba(255,255,255,0.8);
+    padding: 15px 20px;
+    transition: all 0.3s ease;
+    border-radius: 5px;
+    margin: 5px 10px;
+}
+
+.sidebar nav a:hover, .sidebar nav a.active {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    transform: translateX(5px);
+}
+
+.sidebar nav a i {
+    width: 20px;
+    text-align: center;
+    margin-right: 10px;
+}
+
+/* Card Styles */
+.card {
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card-header {
+    background: white;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    border-radius: 15px 15px 0 0 !important;
+    padding: 1.2rem;
+}
+
+.stats-card {
+    padding: 1.5rem;
+    border-radius: 15px;
+    color: white;
+    min-height: 140px;
+}
+
+.stats-card.primary {
+    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+}
+
+.stats-card.warning {
+    background: linear-gradient(45deg, #f72585, #b5179e);
+}
+
+.stats-card.success {
+    background: linear-gradient(45deg, #4cc9f0, #4895ef);
+}
+
+.stats-card h2 {
+    font-size: 2.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.stats-card p {
+    font-size: 1rem;
+    opacity: 0.9;
+    margin: 0;
+}
+
+/* Table Styles */
+.table {
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.table thead th {
+    background: var(--light-bg);
+    border-bottom: none;
+    padding: 15px;
+    font-weight: 600;
+}
+
+.table tbody td {
+    padding: 15px;
+    vertical-align: middle;
+}
+
+/* Button Styles */
+.btn {
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background: var(--secondary-color);
+    border-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+/* Form Styles */
+.form-control {
+    border-radius: 8px;
+    padding: 0.7rem 1rem;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+.form-control:focus {
+    box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    border-color: var(--primary-color);
+}
+
+/* Badge Styles */
+.badge {
+    padding: 0.5em 1em;
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+/* Login Page Styles */
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 2rem;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+.login-card h3 {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: var(--dark-bg);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: auto;
+        z-index: 1030;
+    }
+    
+    .sidebar nav {
+        display: flex;
+        justify-content: space-around;
+        padding: 10px;
+    }
+    
+    .sidebar nav a {
+        margin: 0;
+        padding: 10px;
+        text-align: center;
+    }
+    
+    .sidebar nav a i {
+        margin: 0;
+        display: block;
+        width: auto;
+    }
+    
+    .sidebar nav a span {
+        display: none;
+    }
+    
+    .content {
+        margin-bottom: 70px;
+    }
+    
+    .stats-card {
+        margin-bottom: 1rem;
+    }
+}

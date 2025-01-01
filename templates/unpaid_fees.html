@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Unpaid Fees</h2>
+    
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Students with Unpaid Fees</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Seat No.</th>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>Amount</th>
+                            <th>Month</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fee in unpaid_fees %}
+                        <tr>
+                            <td>{{ fee.student.seat_number }}</td>
+                            <td>{{ fee.student.name }}</td>
+                            <td>{{ fee.student.phone_number }}</td>
+                            <td>₹{{ fee.amount }}</td>
+                            <td>{{ fee.month.strftime('%B %Y') }}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="{{ url_for('student_details', student_id=fee.student.id) }}" class="btn btn-info btn-sm">
+                                        <i class="fas fa-eye"></i> View Details
+                                    </a>
+                                    <a href="{{ url_for('add_fee', student_id=fee.student.id) }}" class="btn btn-success btn-sm">
+                                        <i class="fas fa-money-bill"></i> Add Payment
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">No unpaid fees found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
