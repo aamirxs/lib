@@ -1,0 +1,13 @@
+[Unit]
+Description=Fee Manager Application
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/fee_manager
+Environment="PATH=/home/ubuntu/fee_manager/venv/bin"
+ExecStart=/home/ubuntu/fee_manager/venv/bin/gunicorn -c gunicorn_config.py app:app
+
+[Install]
+WantedBy=multi-user.target
