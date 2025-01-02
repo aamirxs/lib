@@ -5,6 +5,10 @@ from datetime import datetime, date
 import calendar
 from dateutil.relativedelta import relativedelta
 from report_generator import generate_student_report, generate_monthly_report
+from logger_config import setup_logger
+
+# Set up logger
+logger = setup_logger()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
@@ -67,8 +71,9 @@ def generate_fees_for_all_students():
                 db.session.add(new_fee)
         
         db.session.commit()
+        logger.info('Fees generated for all students')
     except Exception as e:
-        print(f"Error generating fees: {str(e)}")
+        logger.error(f'Error generating fees: {str(e)}', exc_info=True)
         db.session.rollback()
 
 # Routes
@@ -77,13 +82,19 @@ def dashboard():
     # Generate fees for current month if not already generated
     generate_fees_for_all_students()
     
-    students = Student.query.all()
-    unpaid_fees = Fee.query.filter_by(paid=False).all()
-    monthly_collection = sum(fee.amount for fee in Fee.query.filter(
-        Fee.paid == True,
-        Fee.payment_date >= datetime.now().date().replace(day=1)
-    ).all())
-    return render_template('dashboard.html', students=students, unpaid_fees=unpaid_fees, monthly_collection=monthly_collection)
+    try:
+        students = Student.query.all()
+        unpaid_fees = Fee.query.filter_by(paid=False).all()
+        monthly_collection = sum(fee.amount for fee in Fee.query.filter(
+            Fee.paid == True,
+            Fee.payment_date >= datetime.now().date().replace(day=1)
+        ).all())
+        logger.info('Dashboard accessed successfully')
+        return render_template('dashboard.html', students=students, unpaid_fees=unpaid_fees, monthly_collection=monthly_collection)
+    except Exception as e:
+        logger.error(f'Error accessing dashboard: {str(e)}', exc_info=True)
+        flash('Error loading dashboard', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/add_student', methods=['GET', 'POST'])
 def add_student():
@@ -91,6 +102,7 @@ def add_student():
         try:
             joining_date_str = request.form.get('joining_date')
             if not joining_date_str:
+                logger.warning('Add student attempt failed: Missing joining date')
                 flash('Joining date is required', 'error')
                 return redirect(url_for('add_student'))
 
@@ -104,12 +116,15 @@ def add_student():
             db.session.add(student)
             db.session.commit()
             
+            logger.info(f'New student added successfully: {student.name} (ID: {student.id})')
+            
             # Generate fee for current month for new student
             generate_fees_for_all_students()
             flash('Student added successfully', 'success')
             return redirect(url_for('dashboard'))
         except Exception as e:
             db.session.rollback()
+            logger.error(f'Error adding student: {str(e)}', exc_info=True)
             flash(f'Error adding student: {str(e)}', 'error')
             return redirect(url_for('add_student'))
     
@@ -119,115 +134,184 @@ def add_student():
 def edit_student(student_id):
     student = Student.query.get_or_404(student_id)
     if request.method == 'POST':
-        student.name = request.form.get('name')
-        student.seat_number = request.form.get('seat_number')
-        student.phone_number = request.form.get('phone_number')
-        student.joining_date = datetime.strptime(request.form.get('joining_date'), '%Y-%m-%d').date()
-        student.monthly_fee = float(request.form.get('monthly_fee', student.monthly_fee))
         try:
+            joining_date_str = request.form.get('joining_date')
+            if not joining_date_str:
+                logger.warning(f'Edit student attempt failed: Missing joining date for student ID {student_id}')
+                flash('Joining date is required', 'error')
+                return redirect(url_for('edit_student', student_id=student_id))
+
+            student.name = request.form.get('name')
+            student.seat_number = request.form.get('seat_number')
+            student.phone_number = request.form.get('phone_number')
+            student.joining_date = datetime.strptime(joining_date_str, '%Y-%m-%d').date()
+            student.monthly_fee = float(request.form.get('monthly_fee', student.monthly_fee))
+            
             db.session.commit()
-            flash('Student updated successfully')
+            logger.info(f'Student updated successfully: {student.name} (ID: {student.id})')
+            flash('Student updated successfully', 'success')
             return redirect(url_for('dashboard'))
-        except:
+        except Exception as e:
             db.session.rollback()
-            flash('Error updating student. Seat number might be already taken.')
+            logger.error(f'Error updating student ID {student_id}: {str(e)}', exc_info=True)
+            flash(f'Error updating student: {str(e)}', 'error')
+            return redirect(url_for('edit_student', student_id=student_id))
+    
     return render_template('edit_student.html', student=student)
 
 @app.route('/delete_student/<int:student_id>', methods=['POST'])
 def delete_student(student_id):
     student = Student.query.get_or_404(student_id)
     try:
+        name = student.name
         db.session.delete(student)
         db.session.commit()
-        flash('Student deleted successfully')
-    except:
+        logger.info(f'Student deleted successfully: {name} (ID: {student_id})')
+        flash('Student deleted successfully', 'success')
+    except Exception as e:
         db.session.rollback()
-        flash('Error deleting student')
+        logger.error(f'Error deleting student ID {student_id}: {str(e)}', exc_info=True)
+        flash(f'Error deleting student: {str(e)}', 'error')
     return redirect(url_for('dashboard'))
 
 @app.route('/add_fee/<int:student_id>', methods=['GET', 'POST'])
 def add_fee(student_id):
     student = Student.query.get_or_404(student_id)
     if request.method == 'POST':
-        month = datetime.strptime(request.form.get('month'), '%Y-%m').date()
-        # Check if fee record already exists for this month
-        existing_fee = Fee.query.filter(
-            Fee.student_id == student_id,
-            Fee.month == month
-        ).first()
-        
-        if existing_fee:
-            existing_fee.amount = float(request.form.get('amount'))
-            existing_fee.paid = request.form.get('paid') == 'True'
-            existing_fee.payment_date = datetime.strptime(request.form.get('payment_date'), '%Y-%m-%d').date() if request.form.get('payment_date') else None
-        else:
-            fee = Fee(
-                student_id=student_id,
-                amount=float(request.form.get('amount')),
-                month=month,
-                paid=request.form.get('paid') == 'True',
-                payment_date=datetime.strptime(request.form.get('payment_date'), '%Y-%m-%d').date() if request.form.get('payment_date') else None
-            )
-            db.session.add(fee)
-        
         try:
+            month_str = request.form.get('month')
+            payment_date_str = request.form.get('payment_date')
+            
+            if not month_str:
+                logger.warning(f'Add fee attempt failed: Missing month for student ID {student_id}')
+                flash('Month is required', 'error')
+                return redirect(url_for('add_fee', student_id=student_id))
+                
+            if not payment_date_str and request.form.get('paid') == 'True':
+                logger.warning(f'Add fee attempt failed: Missing payment date for paid fee (student ID {student_id})')
+                flash('Payment date is required for paid fees', 'error')
+                return redirect(url_for('add_fee', student_id=student_id))
+
+            # Convert month string (YYYY-MM) to date object
+            month = datetime.strptime(month_str + '-01', '%Y-%m-%d').date()
+            
+            # Check if fee record already exists for this month
+            existing_fee = Fee.query.filter(
+                Fee.student_id == student_id,
+                Fee.month == month
+            ).first()
+            
+            if existing_fee:
+                existing_fee.amount = float(request.form.get('amount'))
+                existing_fee.paid = request.form.get('paid') == 'True'
+                if payment_date_str:
+                    existing_fee.payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d').date()
+                logger.info(f'Fee record updated for student ID {student_id}: Month {month_str}')
+            else:
+                fee = Fee(
+                    student_id=student_id,
+                    amount=float(request.form.get('amount')),
+                    month=month,
+                    paid=request.form.get('paid') == 'True',
+                    payment_date=datetime.strptime(payment_date_str, '%Y-%m-%d').date() if payment_date_str else None
+                )
+                db.session.add(fee)
+                logger.info(f'New fee record added for student ID {student_id}: Month {month_str}')
+            
             db.session.commit()
-            flash('Fee record updated successfully')
-        except:
+            flash('Fee payment added successfully', 'success')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
             db.session.rollback()
-            flash('Error updating fee record')
-        
-        return redirect(url_for('student_details', student_id=student_id))
+            logger.error(f'Error adding fee for student ID {student_id}: {str(e)}', exc_info=True)
+            flash(f'Error adding fee payment: {str(e)}', 'error')
+            return redirect(url_for('add_fee', student_id=student_id))
     
-    return render_template('add_fee.html', student=student)
+    today = datetime.now().date().strftime('%Y-%m-%d')
+    return render_template('add_fee.html', student=student, today=today)
 
 @app.route('/student/<int:student_id>')
 def student_details(student_id):
-    student = Student.query.get_or_404(student_id)
-    return render_template('student_details.html', student=student)
+    try:
+        student = Student.query.get_or_404(student_id)
+        logger.info(f'Student details accessed successfully: {student.name} (ID: {student_id})')
+        return render_template('student_details.html', student=student)
+    except Exception as e:
+        logger.error(f'Error accessing student details: {str(e)}', exc_info=True)
+        flash('Error loading student details', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/unpaid_fees')
 def unpaid_fees():
     # Generate fees for current month if not already generated
     generate_fees_for_all_students()
     
-    # Get all students with unpaid fees
-    unpaid = Fee.query.filter_by(paid=False).join(Student).order_by(Fee.month.desc()).all()
-    return render_template('unpaid_fees.html', unpaid_fees=unpaid)
+    try:
+        # Get all students with unpaid fees
+        unpaid = Fee.query.filter_by(paid=False).join(Student).order_by(Fee.month.desc()).all()
+        logger.info('Unpaid fees accessed successfully')
+        return render_template('unpaid_fees.html', unpaid_fees=unpaid)
+    except Exception as e:
+        logger.error(f'Error accessing unpaid fees: {str(e)}', exc_info=True)
+        flash('Error loading unpaid fees', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/generate_student_report/<int:student_id>')
 def generate_student_report_route(student_id):
-    student = Student.query.get_or_404(student_id)
-    filename = f'reports/student_{student.seat_number}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
-    
-    # Create reports directory if it doesn't exist
-    os.makedirs('reports', exist_ok=True)
-    
-    # Generate the report
-    generate_student_report(student, student.fees, filename)
-    
-    # Send the file to the user
-    return send_file(filename, as_attachment=True)
-
-@app.route('/generate_monthly_report', methods=['GET', 'POST'])
-def generate_monthly_report_route():
-    if request.method == 'POST':
-        month = datetime.strptime(request.form.get('month'), '%Y-%m').date()
-        filename = f'reports/monthly_report_{month.strftime("%Y%m")}.pdf'
+    try:
+        student = Student.query.get_or_404(student_id)
+        filename = f'reports/student_{student.seat_number}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
         
         # Create reports directory if it doesn't exist
         os.makedirs('reports', exist_ok=True)
         
-        # Get all students
-        students = Student.query.order_by(Student.seat_number).all()
-        
         # Generate the report
-        generate_monthly_report(students, month, filename)
+        generate_student_report(student, student.fees, filename)
         
         # Send the file to the user
+        logger.info(f'Student report generated successfully: {student.name} (ID: {student_id})')
         return send_file(filename, as_attachment=True)
+    except Exception as e:
+        logger.error(f'Error generating student report: {str(e)}', exc_info=True)
+        flash('Error generating student report', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/generate_monthly_report', methods=['GET', 'POST'])
+def generate_monthly_report_route():
+    if request.method == 'POST':
+        try:
+            month = datetime.strptime(request.form.get('month'), '%Y-%m').date()
+            filename = f'reports/monthly_report_{month.strftime("%Y%m")}.pdf'
+            
+            # Create reports directory if it doesn't exist
+            os.makedirs('reports', exist_ok=True)
+            
+            # Get all students
+            students = Student.query.order_by(Student.seat_number).all()
+            
+            # Generate the report
+            generate_monthly_report(students, month, filename)
+            
+            # Send the file to the user
+            logger.info(f'Monthly report generated successfully: {month.strftime("%Y-%m")}')
+            return send_file(filename, as_attachment=True)
+        except Exception as e:
+            logger.error(f'Error generating monthly report: {str(e)}', exc_info=True)
+            flash('Error generating monthly report', 'error')
+            return redirect(url_for('index'))
     
     return render_template('generate_monthly_report.html')
+
+@app.errorhandler(404)
+def not_found_error(error):
+    logger.warning(f'Page not found: {request.url}')
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    logger.error(f'Server Error: {str(error)}', exc_info=True)
+    return render_template('500.html'), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
