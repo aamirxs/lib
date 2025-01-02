@@ -1,7 +1,10 @@
-bind = "0.0.0.0:8000"
-workers = 3
+import os
+
+bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
+workers = 4
+threads = 2
 timeout = 120
-accesslog = "logs/access.log"
-errorlog = "logs/error.log"
+accesslog = '-'
+errorlog = '-'
 capture_output = True
-loglevel = "info"
+enable_stdio_inheritance = True
