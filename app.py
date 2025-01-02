@@ -111,20 +111,29 @@ def dashboard():
             
         # Get fees due today
         today = datetime.now().date()
-        due_today = db.session.query(Fee, Student)\
-            .join(Student)\
-            .filter(
-                Fee.paid == False,
-                Fee.month <= today,
-                ~db.session.query(Fee)\
-                    .filter(
-                        Fee.student_id == Student.id,
-                        Fee.month == today.replace(day=1),
-                        Fee.paid == True
-                    ).exists()
-            )\
-            .order_by(Student.name)\
+        current_month = today.replace(day=1)
+        
+        # First, get all students who haven't paid for the current month
+        unpaid_students = db.session.query(Student)\
+            .outerjoin(Fee, and_(
+                Fee.student_id == Student.id,
+                Fee.month == current_month,
+                Fee.paid == True
+            ))\
+            .filter(Fee.id == None)\
             .all()
+            
+        # Then get their unpaid fees
+        due_today = []
+        for student in unpaid_students:
+            unpaid_fee = db.session.query(Fee)\
+                .filter(
+                    Fee.student_id == student.id,
+                    Fee.month == current_month,
+                    Fee.paid == False
+                ).first()
+            if unpaid_fee:
+                due_today.append((unpaid_fee, student))
             
         logger.info('Dashboard accessed successfully')
         return render_template('dashboard.html', 
