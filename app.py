@@ -7,13 +7,21 @@ from report_generator import generate_student_report, generate_monthly_report
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///data/fee_management.db')
 
-# Ensure the data directory exists
-os.makedirs('data', exist_ok=True)
+# Handle PostgreSQL URL from Render
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///fee_management.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy()
 db.init_app(app)
+
+# Create tables
+with app.app_context():
+    db.create_all()
 
 # Models
 class Student(db.Model):
@@ -223,8 +231,4 @@ def generate_monthly_report_route():
     return render_template('generate_monthly_report.html')
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        # Generate initial fees for all students
-        generate_fees_for_all_students()
     app.run(debug=True)
