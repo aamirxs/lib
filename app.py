@@ -1,7 +1,8 @@
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
-import os
+from datetime import datetime, date
+import calendar
 from dateutil.relativedelta import relativedelta
 from report_generator import generate_student_report, generate_monthly_report
 
@@ -16,72 +17,59 @@ if database_url and database_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///fee_management.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy()
-db.init_app(app)
-
-# Create tables
-with app.app_context():
-    db.create_all()
+db = SQLAlchemy(app)
 
 # Models
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     seat_number = db.Column(db.String(20), unique=True, nullable=False)
-    phone_number = db.Column(db.String(15), nullable=False)
-    joining_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    monthly_fee = db.Column(db.Float, nullable=False, default=1000.0)  # Default monthly fee amount
-    fees = db.relationship('FeePayment', backref='student', lazy=True, cascade="all, delete-orphan")
+    phone_number = db.Column(db.String(15))
+    joining_date = db.Column(db.Date, nullable=False)
+    monthly_fee = db.Column(db.Float, nullable=False)
+    fees = db.relationship('Fee', backref='student', lazy=True)
 
-    def generate_monthly_fee(self, month_date=None):
-        """Generate unpaid fee record for the specified month if it doesn't exist"""
-        if month_date is None:
-            month_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
-        # Check if fee record already exists for this month
-        existing_fee = FeePayment.query.filter(
-            FeePayment.student_id == self.id,
-            FeePayment.month == month_date
-        ).first()
-        
-        if not existing_fee:
-            # Create new unpaid fee record
-            fee = FeePayment(
-                student_id=self.id,
-                amount=self.monthly_fee,
-                month=month_date,
-                status='unpaid'
-            )
-            db.session.add(fee)
-            return fee
-        return None
-
-class FeePayment(db.Model):
+class Fee(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
-    month = db.Column(db.DateTime, nullable=False)
-    payment_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    status = db.Column(db.String(20), nullable=False, default='unpaid')  # paid/unpaid
+    month = db.Column(db.Date, nullable=False)
+    paid = db.Column(db.Boolean, default=False)
+    payment_date = db.Column(db.Date)
+
+def init_db():
+    with app.app_context():
+        db.create_all()
+        
+# Initialize database tables
+init_db()
 
 def generate_fees_for_all_students():
-    """Generate unpaid fee records for all students for the current month"""
-    current_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    students = Student.query.all()
-    fees_generated = 0
-    
-    for student in students:
-        fee = student.generate_monthly_fee(current_month)
-        if fee:
-            fees_generated += 1
-    
-    if fees_generated > 0:
-        try:
-            db.session.commit()
-            print(f"Generated {fees_generated} new fee records for {current_month.strftime('%B %Y')}")
-        except:
-            db.session.rollback()
-            print("Error generating fee records")
+    try:
+        students = Student.query.all()
+        current_date = datetime.now().date()
+        current_month = date(current_date.year, current_date.month, 1)
+        
+        for student in students:
+            # Check if fee for current month exists
+            existing_fee = Fee.query.filter_by(
+                student_id=student.id,
+                month=current_month
+            ).first()
+            
+            if not existing_fee:
+                new_fee = Fee(
+                    student_id=student.id,
+                    amount=student.monthly_fee,
+                    month=current_month,
+                    paid=False
+                )
+                db.session.add(new_fee)
+        
+        db.session.commit()
+    except Exception as e:
+        print(f"Error generating fees: {str(e)}")
+        db.session.rollback()
 
 # Routes
 @app.route('/')
@@ -90,10 +78,10 @@ def dashboard():
     generate_fees_for_all_students()
     
     students = Student.query.all()
-    unpaid_fees = FeePayment.query.filter_by(status='unpaid').all()
-    monthly_collection = sum(fee.amount for fee in FeePayment.query.filter(
-        FeePayment.status == 'paid',
-        FeePayment.payment_date >= datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    unpaid_fees = Fee.query.filter_by(paid=False).all()
+    monthly_collection = sum(fee.amount for fee in Fee.query.filter(
+        Fee.paid == True,
+        Fee.payment_date >= datetime.now().date().replace(day=1)
     ).all())
     return render_template('dashboard.html', students=students, unpaid_fees=unpaid_fees, monthly_collection=monthly_collection)
 
@@ -104,13 +92,14 @@ def add_student():
             name=request.form.get('name'),
             seat_number=request.form.get('seat_number'),
             phone_number=request.form.get('phone_number'),
+            joining_date=datetime.strptime(request.form.get('joining_date'), '%Y-%m-%d').date(),
             monthly_fee=float(request.form.get('monthly_fee', 1000.0))
         )
         db.session.add(student)
         try:
             db.session.commit()
             # Generate fee for current month for new student
-            student.generate_monthly_fee()
+            generate_fees_for_all_students()
             db.session.commit()
             flash('Student added successfully')
         except:
@@ -126,6 +115,7 @@ def edit_student(student_id):
         student.name = request.form.get('name')
         student.seat_number = request.form.get('seat_number')
         student.phone_number = request.form.get('phone_number')
+        student.joining_date = datetime.strptime(request.form.get('joining_date'), '%Y-%m-%d').date()
         student.monthly_fee = float(request.form.get('monthly_fee', student.monthly_fee))
         try:
             db.session.commit()
@@ -152,22 +142,24 @@ def delete_student(student_id):
 def add_fee(student_id):
     student = Student.query.get_or_404(student_id)
     if request.method == 'POST':
-        month = datetime.strptime(request.form.get('month'), '%Y-%m')
+        month = datetime.strptime(request.form.get('month'), '%Y-%m').date()
         # Check if fee record already exists for this month
-        existing_fee = FeePayment.query.filter(
-            FeePayment.student_id == student_id,
-            FeePayment.month == month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        existing_fee = Fee.query.filter(
+            Fee.student_id == student_id,
+            Fee.month == month
         ).first()
         
         if existing_fee:
             existing_fee.amount = float(request.form.get('amount'))
-            existing_fee.status = request.form.get('status', 'unpaid')
+            existing_fee.paid = request.form.get('paid') == 'True'
+            existing_fee.payment_date = datetime.strptime(request.form.get('payment_date'), '%Y-%m-%d').date() if request.form.get('payment_date') else None
         else:
-            fee = FeePayment(
+            fee = Fee(
                 student_id=student_id,
                 amount=float(request.form.get('amount')),
-                month=month.replace(day=1),
-                status=request.form.get('status', 'unpaid')
+                month=month,
+                paid=request.form.get('paid') == 'True',
+                payment_date=datetime.strptime(request.form.get('payment_date'), '%Y-%m-%d').date() if request.form.get('payment_date') else None
             )
             db.session.add(fee)
         
@@ -193,7 +185,7 @@ def unpaid_fees():
     generate_fees_for_all_students()
     
     # Get all students with unpaid fees
-    unpaid = FeePayment.query.filter_by(status='unpaid').join(Student).order_by(FeePayment.month.desc()).all()
+    unpaid = Fee.query.filter_by(paid=False).join(Student).order_by(Fee.month.desc()).all()
     return render_template('unpaid_fees.html', unpaid_fees=unpaid)
 
 @app.route('/generate_student_report/<int:student_id>')
@@ -213,7 +205,7 @@ def generate_student_report_route(student_id):
 @app.route('/generate_monthly_report', methods=['GET', 'POST'])
 def generate_monthly_report_route():
     if request.method == 'POST':
-        month = datetime.strptime(request.form.get('month'), '%Y-%m')
+        month = datetime.strptime(request.form.get('month'), '%Y-%m').date()
         filename = f'reports/monthly_report_{month.strftime("%Y%m")}.pdf'
         
         # Create reports directory if it doesn't exist
