@@ -324,10 +324,17 @@ def generate_student_report_route(student_id):
         student = Student.query.get_or_404(student_id)
         fees = Fee.query.filter_by(student_id=student_id).order_by(Fee.month).all()
         
-        pdf_path = generate_student_report(student, fees)
+        # Create reports directory if it doesn't exist
+        os.makedirs('reports', exist_ok=True)
+        
+        # Generate filename with timestamp to avoid conflicts
+        filename = f'reports/student_{student.seat_number}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        
+        # Generate the report
+        generate_student_report(student, fees, filename)
         
         logger.info(f'Generated student report for: {student.name} (ID: {student_id})')
-        return send_file(pdf_path, as_attachment=True, download_name=f'student_report_{student.name}.pdf')
+        return send_file(filename, as_attachment=True, download_name=f'student_report_{student.name}.pdf')
     except Exception as e:
         logger.error(f'Error generating student report: {str(e)}', exc_info=True)
         flash(f'Error generating report: {str(e)}', 'error')
@@ -344,10 +351,17 @@ def generate_monthly_report_route(year, month):
             .order_by(Student.name)\
             .all()
             
-        pdf_path = generate_monthly_report(fees, target_date)
+        # Create reports directory if it doesn't exist
+        os.makedirs('reports', exist_ok=True)
+        
+        # Generate filename with timestamp to avoid conflicts
+        filename = f'reports/monthly_report_{target_date.strftime("%Y%m")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        
+        # Generate the report
+        generate_monthly_report(fees, target_date, filename)
         
         logger.info(f'Generated monthly report for: {target_date.strftime("%B %Y")}')
-        return send_file(pdf_path, as_attachment=True, download_name=f'monthly_report_{target_date.strftime("%B_%Y")}.pdf')
+        return send_file(filename, as_attachment=True, download_name=f'monthly_report_{target_date.strftime("%B_%Y")}.pdf')
     except Exception as e:
         logger.error(f'Error generating monthly report: {str(e)}', exc_info=True)
         flash(f'Error generating report: {str(e)}', 'error')
