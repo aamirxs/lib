@@ -213,11 +213,17 @@ def edit_student(student_id):
 
 @app.route('/delete_student/<int:student_id>', methods=['POST'])
 def delete_student(student_id):
-    student = Student.query.get_or_404(student_id)
     try:
+        student = Student.query.get_or_404(student_id)
         name = student.name
+        
+        # First delete all associated fees
+        Fee.query.filter_by(student_id=student_id).delete()
+        
+        # Then delete the student
         db.session.delete(student)
         db.session.commit()
+        
         logger.info(f'Student deleted successfully: {name} (ID: {student_id})')
         flash('Student deleted successfully', 'success')
     except Exception as e:
@@ -316,47 +322,36 @@ def unpaid_fees():
 def generate_student_report_route(student_id):
     try:
         student = Student.query.get_or_404(student_id)
-        filename = f'reports/student_{student.seat_number}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        fees = Fee.query.filter_by(student_id=student_id).order_by(Fee.month).all()
         
-        # Create reports directory if it doesn't exist
-        os.makedirs('reports', exist_ok=True)
+        pdf_path = generate_student_report(student, fees)
         
-        # Generate the report
-        generate_student_report(student, student.fees, filename)
-        
-        # Send the file to the user
-        logger.info(f'Student report generated successfully: {student.name} (ID: {student_id})')
-        return send_file(filename, as_attachment=True)
+        logger.info(f'Generated student report for: {student.name} (ID: {student_id})')
+        return send_file(pdf_path, as_attachment=True, download_name=f'student_report_{student.name}.pdf')
     except Exception as e:
         logger.error(f'Error generating student report: {str(e)}', exc_info=True)
-        flash('Error generating student report', 'error')
-        return redirect(url_for('index'))
+        flash(f'Error generating report: {str(e)}', 'error')
+        return redirect(url_for('dashboard'))
 
-@app.route('/generate_monthly_report', methods=['GET', 'POST'])
-def generate_monthly_report_route():
-    if request.method == 'POST':
-        try:
-            month = datetime.strptime(request.form.get('month'), '%Y-%m').date()
-            filename = f'reports/monthly_report_{month.strftime("%Y%m")}.pdf'
+@app.route('/generate_monthly_report/<int:year>/<int:month>')
+def generate_monthly_report_route(year, month):
+    try:
+        # Get all fees for the specified month
+        target_date = datetime(year, month, 1).date()
+        fees = db.session.query(Fee, Student)\
+            .join(Student)\
+            .filter(Fee.month == target_date)\
+            .order_by(Student.name)\
+            .all()
             
-            # Create reports directory if it doesn't exist
-            os.makedirs('reports', exist_ok=True)
-            
-            # Get all students
-            students = Student.query.order_by(Student.seat_number).all()
-            
-            # Generate the report
-            generate_monthly_report(students, month, filename)
-            
-            # Send the file to the user
-            logger.info(f'Monthly report generated successfully: {month.strftime("%Y-%m")}')
-            return send_file(filename, as_attachment=True)
-        except Exception as e:
-            logger.error(f'Error generating monthly report: {str(e)}', exc_info=True)
-            flash('Error generating monthly report', 'error')
-            return redirect(url_for('index'))
-    
-    return render_template('generate_monthly_report.html')
+        pdf_path = generate_monthly_report(fees, target_date)
+        
+        logger.info(f'Generated monthly report for: {target_date.strftime("%B %Y")}')
+        return send_file(pdf_path, as_attachment=True, download_name=f'monthly_report_{target_date.strftime("%B_%Y")}.pdf')
+    except Exception as e:
+        logger.error(f'Error generating monthly report: {str(e)}', exc_info=True)
+        flash(f'Error generating report: {str(e)}', 'error')
+        return redirect(url_for('dashboard'))
 
 @app.errorhandler(404)
 def not_found_error(error):
