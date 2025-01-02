@@ -79,18 +79,61 @@ def generate_fees_for_all_students():
 # Routes
 @app.route('/')
 def dashboard():
-    # Generate fees for current month if not already generated
-    generate_fees_for_all_students()
-    
     try:
+        # Generate fees for current month if not already generated
+        generate_fees_for_all_students()
+        
         students = Student.query.all()
-        unpaid_fees = Fee.query.filter_by(paid=False).all()
-        monthly_collection = sum(fee.amount for fee in Fee.query.filter(
-            Fee.paid == True,
-            Fee.payment_date >= datetime.now().date().replace(day=1)
-        ).all())
+        
+        # Get unpaid fees with student information
+        unpaid_fees = db.session.query(Fee, Student)\
+            .join(Student)\
+            .filter(Fee.paid == False)\
+            .order_by(Student.name, Fee.month)\
+            .all()
+            
+        # Get paid fees with student information (last 30 entries)
+        paid_fees = db.session.query(Fee, Student)\
+            .join(Student)\
+            .filter(Fee.paid == True)\
+            .order_by(Fee.payment_date.desc())\
+            .limit(30)\
+            .all()
+            
+        # Calculate monthly collection
+        current_month_start = datetime.now().date().replace(day=1)
+        monthly_collection = db.session.query(db.func.sum(Fee.amount))\
+            .filter(
+                Fee.paid == True,
+                Fee.payment_date >= current_month_start
+            ).scalar() or 0
+            
+        # Get fees due today
+        today = datetime.now().date()
+        due_today = db.session.query(Fee, Student)\
+            .join(Student)\
+            .filter(
+                Fee.paid == False,
+                Fee.month <= today,
+                ~exists().where(
+                    and_(
+                        Fee.student_id == Student.id,
+                        Fee.month == today.replace(day=1),
+                        Fee.paid == True
+                    )
+                )
+            )\
+            .order_by(Student.name)\
+            .all()
+            
         logger.info('Dashboard accessed successfully')
-        return render_template('dashboard.html', students=students, unpaid_fees=unpaid_fees, monthly_collection=monthly_collection)
+        return render_template('dashboard.html', 
+                            students=students, 
+                            unpaid_fees=unpaid_fees,
+                            paid_fees=paid_fees,
+                            due_today=due_today,
+                            monthly_collection=monthly_collection,
+                            today=today)
     except Exception as e:
         logger.error(f'Error accessing dashboard: {str(e)}', exc_info=True)
         flash('Error loading dashboard', 'error')
@@ -181,19 +224,21 @@ def add_fee(student_id):
         try:
             month_str = request.form.get('month')
             payment_date_str = request.form.get('payment_date')
+            is_paid = request.form.get('paid') == 'True'
             
             if not month_str:
                 logger.warning(f'Add fee attempt failed: Missing month for student ID {student_id}')
                 flash('Month is required', 'error')
                 return redirect(url_for('add_fee', student_id=student_id))
                 
-            if not payment_date_str and request.form.get('paid') == 'True':
+            if not payment_date_str and is_paid:
                 logger.warning(f'Add fee attempt failed: Missing payment date for paid fee (student ID {student_id})')
                 flash('Payment date is required for paid fees', 'error')
                 return redirect(url_for('add_fee', student_id=student_id))
 
             # Convert month string (YYYY-MM) to date object
             month = datetime.strptime(month_str + '-01', '%Y-%m-%d').date()
+            amount = float(request.form.get('amount', student.monthly_fee))
             
             # Check if fee record already exists for this month
             existing_fee = Fee.query.filter(
@@ -202,24 +247,26 @@ def add_fee(student_id):
             ).first()
             
             if existing_fee:
-                existing_fee.amount = float(request.form.get('amount'))
-                existing_fee.paid = request.form.get('paid') == 'True'
+                existing_fee.amount = amount
+                existing_fee.paid = is_paid
                 if payment_date_str:
                     existing_fee.payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d').date()
-                logger.info(f'Fee record updated for student ID {student_id}: Month {month_str}')
+                elif not is_paid:
+                    existing_fee.payment_date = None
+                logger.info(f'Fee record updated for student ID {student_id}: Month {month_str}, Paid: {is_paid}')
             else:
                 fee = Fee(
                     student_id=student_id,
-                    amount=float(request.form.get('amount')),
+                    amount=amount,
                     month=month,
-                    paid=request.form.get('paid') == 'True',
-                    payment_date=datetime.strptime(payment_date_str, '%Y-%m-%d').date() if payment_date_str else None
+                    paid=is_paid,
+                    payment_date=datetime.strptime(payment_date_str, '%Y-%m-%d').date() if payment_date_str and is_paid else None
                 )
                 db.session.add(fee)
-                logger.info(f'New fee record added for student ID {student_id}: Month {month_str}')
+                logger.info(f'New fee record added for student ID {student_id}: Month {month_str}, Paid: {is_paid}')
             
             db.session.commit()
-            flash('Fee payment added successfully', 'success')
+            flash('Fee payment updated successfully', 'success')
             return redirect(url_for('dashboard'))
         except Exception as e:
             db.session.rollback()
