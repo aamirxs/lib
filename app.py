@@ -88,24 +88,31 @@ def dashboard():
 @app.route('/add_student', methods=['GET', 'POST'])
 def add_student():
     if request.method == 'POST':
-        student = Student(
-            name=request.form.get('name'),
-            seat_number=request.form.get('seat_number'),
-            phone_number=request.form.get('phone_number'),
-            joining_date=datetime.strptime(request.form.get('joining_date'), '%Y-%m-%d').date(),
-            monthly_fee=float(request.form.get('monthly_fee', 1000.0))
-        )
-        db.session.add(student)
         try:
+            joining_date_str = request.form.get('joining_date')
+            if not joining_date_str:
+                flash('Joining date is required', 'error')
+                return redirect(url_for('add_student'))
+
+            student = Student(
+                name=request.form.get('name'),
+                seat_number=request.form.get('seat_number'),
+                phone_number=request.form.get('phone_number'),
+                joining_date=datetime.strptime(joining_date_str, '%Y-%m-%d').date(),
+                monthly_fee=float(request.form.get('monthly_fee', 1000.0))
+            )
+            db.session.add(student)
             db.session.commit()
+            
             # Generate fee for current month for new student
             generate_fees_for_all_students()
-            db.session.commit()
-            flash('Student added successfully')
-        except:
+            flash('Student added successfully', 'success')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
             db.session.rollback()
-            flash('Error adding student. Seat number might be already taken.')
-        return redirect(url_for('dashboard'))
+            flash(f'Error adding student: {str(e)}', 'error')
+            return redirect(url_for('add_student'))
+    
     return render_template('add_student.html')
 
 @app.route('/edit_student/<int:student_id>', methods=['GET', 'POST'])
