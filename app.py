@@ -6,6 +6,7 @@ import calendar
 from dateutil.relativedelta import relativedelta
 from report_generator import generate_student_report, generate_monthly_report
 from logger_config import setup_logger
+from sqlalchemy import and_, exists
 
 # Set up logger
 logger = setup_logger()
@@ -115,13 +116,12 @@ def dashboard():
             .filter(
                 Fee.paid == False,
                 Fee.month <= today,
-                ~exists().where(
-                    and_(
+                ~db.session.query(Fee)\
+                    .filter(
                         Fee.student_id == Student.id,
                         Fee.month == today.replace(day=1),
                         Fee.paid == True
-                    )
-                )
+                    ).exists()
             )\
             .order_by(Student.name)\
             .all()
@@ -137,7 +137,7 @@ def dashboard():
     except Exception as e:
         logger.error(f'Error accessing dashboard: {str(e)}', exc_info=True)
         flash('Error loading dashboard', 'error')
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
 
 @app.route('/add_student', methods=['GET', 'POST'])
 def add_student():
